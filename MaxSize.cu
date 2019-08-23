@@ -18,25 +18,24 @@ void MaxSizeSubMat(int* d_M, int* d_S, int* d_c, int* d_r, int* N) {
 		int a = d_S[ (*d_c * i) + j-1] , b = d_S[ (*d_c * (i-1)) + j ], c = d_S[ (*d_c * (i-1)) + j -1 ];
 		if(a <= b && a <= c) {
 			d_S[ (*d_c * i) + j ] = a + 1;
-			__syncthreads();
 		} else if(b <= c && b <= a) {
 			d_S[ (*d_c * i) + j ] = b + 1;
-			__syncthreads();
 		}else {
 			d_S[ (*d_c * i) + j ] = c + 1;
-			__syncthreads();
 		}
 	} else {
 		d_S[ (*d_c * i) + j ] = 0;
 	}
 }
 
-
+__global__
+void Increment(int* N) {
+	*N += 1;
+}
 
 int main() {
-	int isize = sizeof(int) ; //bsize = sizeof(bool);
+	int isize = sizeof(int) ;
 	int h_r, h_c;
-	//int *d_r, *d_c;
 	cout << "Enter the Number of rows in the matrix." << endl;
 	cin >> h_r;
 	cout << "Enter the Number of columns in the matrix." << endl;
@@ -52,7 +51,6 @@ int main() {
 			if(i == 0 || j == 0) {
 				h_S[i][j] = h_M[i][j];
 			} else {
-
 				h_S[i][j] = 0;
 			}
 		}
@@ -64,35 +62,27 @@ int main() {
 	cudaMalloc((void**)&d_c, isize);
 	cudaMalloc((void**)&d_r, isize);
 
-	for(int i = 0; i < h_r; i++) {
-		for(int j = 0; j < h_c; j++) {
-			cudaMemcpy( &d_M[ (h_c * i) + j ], &h_M[i][j], isize, cudaMemcpyHostToDevice);
-			cudaMemcpy( &d_S[ (h_c * i) + j ], &h_S[i][j], isize, cudaMemcpyHostToDevice);
-		}
-	}
-	puts("");
+	cudaMemcpy( d_M, h_M, h_r * h_c * isize, cudaMemcpyHostToDevice);
+	cudaMemcpy( d_S, h_S, h_r * h_c * isize, cudaMemcpyHostToDevice);
+
 	cudaMemcpy(d_c, &h_c, isize, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_r, &h_r, isize, cudaMemcpyHostToDevice);
 
 	int n = (h_r + h_c - 3), *N;
 	cudaMalloc((void**)&N, isize);
+	int i = 1;
+	cudaMemcpy( N, &i, isize, cudaMemcpyHostToDevice);
 
 	for(int i = 1; i <= (n + 1)/2; i++) {
-		cudaMemcpy( N, &i, isize, cudaMemcpyHostToDevice);
 		MaxSizeSubMat<<<1,i>>> (d_M, d_S, d_c, d_r, N);
-		cudaDeviceSynchronize();
+		Increment<<<1,1>>> (N);
 	}
 	for(int i = (n + 3)/2; i <= n ; i++ ) {
-		cudaMemcpy( N, &i, isize, cudaMemcpyHostToDevice);
 		MaxSizeSubMat<<<1, (n - i + 1)>>> (d_M, d_S, d_c, d_r, N);
-		cudaDeviceSynchronize();
+		Increment<<<1,1>>> (N);
 	}
-	for(int i = 0; i < h_r; i++) {
-		for(int j = 0; j < h_c; j++) {
-			cudaMemcpy( &h_S[i][j], &d_S[ (h_c * i) + j ], isize, cudaMemcpyDeviceToHost);
-		}
-	}
-	cudaDeviceSynchronize();
+	
+		cudaMemcpy( h_S, d_S,h_r * h_c * isize, cudaMemcpyDeviceToHost);
 	int max = h_S[0][0];
 	//cout << " The square size matrix is" << endl;
 	for(int i = 0; i < h_r; i++) {
@@ -100,9 +90,9 @@ int main() {
 			if(max < h_S[i][j]) {
 				max = h_S[i][j];
 			}
-			//cout << h_S[i][j] << " ";
+	//		cout << h_S[i][j] << " ";
 		}
-		//cout << endl;
+	//	cout << endl;
 	}
 	cout << "Max area is " << max * max << ".\n";
 	cudaFree(d_M); cudaFree(d_S);
